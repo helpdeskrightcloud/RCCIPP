@@ -24,6 +24,7 @@ import { useForm, useFormState, useWatch } from "react-hook-form";
 import { InformationCircleIcon } from "@heroicons/react/24/outline";
 import { CippApiResults } from "../CippComponents/CippApiResults";
 import cippRoles from "../../data/cipp-roles.json";
+import { GroupHeader, GroupItems } from "../CippComponents/CippAutocompleteGrouping";
 
 export const CippRoleAddEdit = ({ selectedRole }) => {
   const updatePermissions = ApiPostCall({
@@ -57,6 +58,7 @@ export const CippRoleAddEdit = ({ selectedRole }) => {
 
   const selectedTenant = useWatch({ control: formControl.control, name: "allowedTenants" });
   const blockedTenants = useWatch({ control: formControl.control, name: "blockedTenants" });
+  const blockedEndpoints = useWatch({ control: formControl.control, name: "BlockedEndpoints" });
   const setDefaults = useWatch({ control: formControl.control, name: "Defaults" });
   const selectedPermissions = useWatch({ control: formControl.control, name: "Permissions" });
   const selectedEntraGroup = useWatch({ control: formControl.control, name: "EntraGroup" });
@@ -149,27 +151,61 @@ export const CippRoleAddEdit = ({ selectedRole }) => {
         (role) => role.RowKey === selectedRole
       );
 
+      // Process allowed tenants - handle both groups and tenant IDs
       var newAllowedTenants = [];
-      currentPermissions?.AllowedTenants.map((tenant) => {
-        var tenantInfo = tenants.find((t) => t.customerId === tenant);
-        var label = `${tenantInfo?.displayName} (${tenantInfo?.defaultDomainName})`;
-        if (tenantInfo?.displayName) {
+      currentPermissions?.AllowedTenants?.forEach((item) => {
+        if (typeof item === "object" && item.type === "Group") {
+          // Handle group objects
           newAllowedTenants.push({
-            label: label,
-            value: tenantInfo.defaultDomainName,
+            label: item.label,
+            value: item.value,
+            type: "Group",
           });
+        } else {
+          // Handle tenant customer IDs (legacy format)
+          var tenantInfo = tenants.find((t) => t.customerId === item);
+          if (tenantInfo?.displayName) {
+            var label = `${tenantInfo.displayName} (${tenantInfo.defaultDomainName})`;
+            newAllowedTenants.push({
+              label: label,
+              value: tenantInfo.defaultDomainName,
+              type: "Tenant",
+              addedFields: {
+                defaultDomainName: tenantInfo.defaultDomainName,
+                displayName: tenantInfo.displayName,
+                customerId: tenantInfo.customerId,
+              },
+            });
+          }
         }
       });
 
+      // Process blocked tenants - handle both groups and tenant IDs
       var newBlockedTenants = [];
-      currentPermissions?.BlockedTenants.map((tenant) => {
-        var tenantInfo = tenants.find((t) => t.customerId === tenant);
-        var label = `${tenantInfo?.displayName} (${tenantInfo?.defaultDomainName})`;
-        if (tenantInfo?.displayName) {
+      currentPermissions?.BlockedTenants?.forEach((item) => {
+        if (typeof item === "object" && item.type === "Group") {
+          // Handle group objects
           newBlockedTenants.push({
-            label: label,
-            value: tenantInfo.defaultDomainName,
+            label: item.label,
+            value: item.value,
+            type: "Group",
           });
+        } else {
+          // Handle tenant customer IDs (legacy format)
+          var tenantInfo = tenants.find((t) => t.customerId === item);
+          if (tenantInfo?.displayName) {
+            var label = `${tenantInfo.displayName} (${tenantInfo.defaultDomainName})`;
+            newBlockedTenants.push({
+              label: label,
+              value: tenantInfo.defaultDomainName,
+              type: "Tenant",
+              addedFields: {
+                defaultDomainName: tenantInfo.defaultDomainName,
+                displayName: tenantInfo.displayName,
+                customerId: tenantInfo.customerId,
+              },
+            });
+          }
         }
       });
 
@@ -191,6 +227,13 @@ export const CippRoleAddEdit = ({ selectedRole }) => {
         return processed;
       };
 
+      // Process blocked endpoints
+      const processedBlockedEndpoints =
+        currentPermissions?.BlockedEndpoints?.map((endpoint) => ({
+          label: endpoint,
+          value: endpoint,
+        })) || [];
+
       formControl.reset({
         Permissions:
           basePermissions && Object.keys(basePermissions).length > 0
@@ -199,6 +242,7 @@ export const CippRoleAddEdit = ({ selectedRole }) => {
         RoleName: selectedRole ?? currentPermissions?.RowKey,
         allowedTenants: newAllowedTenants,
         blockedTenants: newBlockedTenants,
+        BlockedEndpoints: processedBlockedEndpoints,
         EntraGroup: currentPermissions?.EntraGroup,
       });
     }
@@ -245,22 +289,50 @@ export const CippRoleAddEdit = ({ selectedRole }) => {
 
   const handleSubmit = () => {
     let values = formControl.getValues();
-    var allowedTenantIds = [];
 
-    selectedTenant.map((tenant) => {
-      var tenant = tenants.find((t) => t.defaultDomainName === tenant?.value);
-      if (tenant?.customerId) {
-        allowedTenantIds.push(tenant.customerId);
-      }
-    });
+    // Process allowed tenants - preserve groups and convert tenants to IDs
+    const processedAllowedTenants =
+      selectedTenant
+        ?.map((tenant) => {
+          if (tenant.type === "Group") {
+            // Keep groups as-is for backend processing
+            return {
+              type: "Group",
+              value: tenant.value,
+              label: tenant.label,
+            };
+          } else {
+            // Convert tenant domain names to customer IDs
+            const tenantInfo = tenants.find((t) => t.defaultDomainName === tenant.value);
+            return tenantInfo?.customerId;
+          }
+        })
+        .filter(Boolean) || [];
 
-    var blockedTenantIds = [];
-    blockedTenants.map((tenant) => {
-      var tenant = tenants.find((t) => t.defaultDomainName === tenant?.value);
-      if (tenant?.customerId) {
-        blockedTenantIds.push(tenant.customerId);
-      }
-    });
+    // Process blocked tenants - preserve groups and convert tenants to IDs
+    const processedBlockedTenants =
+      blockedTenants
+        ?.map((tenant) => {
+          if (tenant.type === "Group") {
+            // Keep groups as-is for backend processing
+            return {
+              type: "Group",
+              value: tenant.value,
+              label: tenant.label,
+            };
+          } else {
+            // Convert tenant domain names to customer IDs
+            const tenantInfo = tenants.find((t) => t.defaultDomainName === tenant.value);
+            return tenantInfo?.customerId;
+          }
+        })
+        .filter(Boolean) || [];
+
+    const processedBlockedEndpoints =
+      values?.["BlockedEndpoints"]?.map((endpoint) => {
+        // Extract the endpoint value
+        return endpoint.value || endpoint;
+      }) || [];
 
     updatePermissions.mutate({
       url: "/api/ExecCustomRole?Action=AddUpdate",
@@ -268,8 +340,9 @@ export const CippRoleAddEdit = ({ selectedRole }) => {
         RoleName: values?.["RoleName"],
         Permissions: selectedPermissions,
         EntraGroup: selectedEntraGroup,
-        AllowedTenants: allowedTenantIds,
-        BlockedTenants: blockedTenantIds,
+        AllowedTenants: processedAllowedTenants,
+        BlockedTenants: processedBlockedTenants,
+        BlockedEndpoints: processedBlockedEndpoints,
       },
     });
   };
@@ -420,6 +493,7 @@ export const CippRoleAddEdit = ({ selectedRole }) => {
                   allTenants={true}
                   name="allowedTenants"
                   fullWidth={true}
+                  includeGroups={true}
                 />
                 {allTenantSelected && blockedTenants?.length == 0 && (
                   <Alert color="warning">
@@ -437,9 +511,64 @@ export const CippRoleAddEdit = ({ selectedRole }) => {
                     allTenants={false}
                     name="blockedTenants"
                     fullWidth={true}
+                    includeGroups={true}
                   />
                 </Box>
               )}
+
+              {/* Blocked Endpoints */}
+              <Box sx={{ mb: 3 }}>
+                <CippFormComponent
+                  type="autoComplete"
+                  name="BlockedEndpoints"
+                  label="Blocked Endpoints"
+                  placeholder="Select API endpoints to block for this role"
+                  options={
+                    apiPermissionSuccess
+                      ? (() => {
+                          const allEndpoints = [];
+                          Object.keys(apiPermissions)
+                            .sort()
+                            .forEach((cat) => {
+                              Object.keys(apiPermissions[cat])
+                                .sort()
+                                .forEach((obj) => {
+                                  Object.keys(apiPermissions[cat][obj]).forEach((type) => {
+                                    Object.keys(apiPermissions[cat][obj][type]).forEach(
+                                      (apiKey) => {
+                                        allEndpoints.push({
+                                          label: apiPermissions[cat][obj][type][apiKey],
+                                          value: apiPermissions[cat][obj][type][apiKey],
+                                          category: cat,
+                                        });
+                                      }
+                                    );
+                                  });
+                                });
+                            });
+                          // Sort endpoints alphabetically within each category
+                          return allEndpoints.sort((a, b) => {
+                            if (a.category !== b.category) {
+                              return a.category.localeCompare(b.category);
+                            }
+                            return a.label.localeCompare(b.label);
+                          });
+                        })()
+                      : []
+                  }
+                  formControl={formControl}
+                  fullWidth={true}
+                  multiple={true}
+                  creatable={false}
+                  groupBy={(option) => option.category}
+                  renderGroup={(params) => (
+                    <li key={params.key}>
+                      <GroupHeader>{params.group}</GroupHeader>
+                      <GroupItems>{params.children}</GroupItems>
+                    </li>
+                  )}
+                />
+              </Box>
             </>
           )}
           {apiPermissionFetching && <Skeleton variant="rectangle" height={500} />}
@@ -528,6 +657,18 @@ export const CippRoleAddEdit = ({ selectedRole }) => {
               <ul>
                 {blockedTenants.map((tenant, idx) => (
                   <li key={idx}>{tenant?.label}</li>
+                ))}
+              </ul>
+            </>
+          )}
+          {blockedEndpoints?.length > 0 && (
+            <>
+              <h5>Blocked Endpoints</h5>
+              <ul>
+                {blockedEndpoints.map((endpoint, idx) => (
+                  <li key={idx} style={{ fontSize: "0.875rem", marginBottom: "0.25rem" }}>
+                    {endpoint?.label || endpoint?.value || endpoint}
+                  </li>
                 ))}
               </ul>
             </>
