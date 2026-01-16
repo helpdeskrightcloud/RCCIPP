@@ -22,7 +22,8 @@ const Page = () => {
   const router = useRouter();
   const { templateId } = router.query;
   const settings = useSettings();
-  const currentTenant = settings.currentTenant;
+  // Prioritize URL query parameter, then fall back to settings
+  const currentTenant = router.query.tenantFilter || settings.currentTenant;
 
   const formControl = useForm({
     mode: "onChange",
@@ -174,7 +175,6 @@ const Page = () => {
     <HeaderedTabbedLayout
       tabOptions={tabOptions}
       title={title}
-      backUrl="/tenant/standards/list-standards"
       actions={[]}
       actionsData={{}}
       isFetching={tenantDetails.isFetching}
@@ -191,6 +191,10 @@ const Page = () => {
                 {
                   label: "Tenant ID",
                   value: getCippFormatting(tenantDetails.data?.id, "Tenant"),
+                },
+                {
+                  label: "Default Domain",
+                  value: currentTenant,
                 },
               ]}
               showDivider={false}
